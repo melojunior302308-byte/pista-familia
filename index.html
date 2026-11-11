@@ -536,10 +536,10 @@ function tick(){
   if(G&&!G.fin){ tickGroup(t); T.raf=requestAnimationFrame(tick); return; }
   if(isSprint()){
     $("#clock").innerHTML=fmtClock(el,false);
-    const ref=bestOf(ui.runner,ui.mode)||REF[ui.mode]; const s0=sprintStart(); moveDotAt(s0+(140-s0)*Math.min(el/ref,1));
+    const ref=refMs(ui.runner,ui.mode); const s0=sprintStart(); moveDotAt(s0+(140-s0)*Math.min(el/ref,1));
   }else{
     $("#clock").innerHTML=fmtClock(t-T.lapStart,true);
-    const ref=bestOf(ui.runner,"volta")||120000; moveDot(((t-T.lapStart)/ref)%1);
+    const ref=refMs(ui.runner,"volta"); moveDot(Math.min((t-T.lapStart)/ref,0.97));
     $("#sub").textContent="Volta "+(T.laps.length+1)+" · total "+fmt(el,true);
   }
   T.raf=requestAnimationFrame(tick);
@@ -553,6 +553,17 @@ function moveDotAt(pos){
   d.setAttribute("cx",pt.x.toFixed(1)); d.setAttribute("cy",pt.y.toFixed(1));
 }
 function moveDot(p){ moveDotAt(len()*p); }
+
+// Ritmo usado para animar a bolinha: mediana dos últimos tempos (não o recorde),
+// limitada a valores realistas, para um tempo errado não deixar a bolinha disparar.
+function refMs(rid,k){
+  const isLap=k==="volta";
+  const es=entriesOf(rid,k).slice(-7).map(e=>e.ms).sort((a,b)=>a-b);
+  const def=isLap?S.lapM*300:REF[k];
+  const v=es.length?es[Math.floor(es.length/2)]:def;
+  const lo=isLap?S.lapM*130:Number(k)*80, hi=isLap?S.lapM*1000:Number(k)*400;
+  return Math.min(hi,Math.max(lo,v));
+}
 
 /* ---------- largada em grupo ---------- */
 let G=null;
@@ -614,9 +625,9 @@ function tickGroup(t){
   const L=len();
   G.rs.forEach(g=>{
     let pos;
-    if(G.k!=="volta"){ const s0=sprintStart(), ref=bestOf(g.id,G.k)||REF[G.k]; pos=g.done?140:s0+(140-s0)*Math.min(el/ref,1); }
+    if(G.k!=="volta"){ const s0=sprintStart(), ref=refMs(g.id,G.k); pos=g.done?140:s0+(140-s0)*Math.min(el/ref,1); }
     else{
-      const ref=bestOf(g.id,"volta")||120000; pos=L*(((t-g.lapStart)/ref)%1);
+      const ref=refMs(g.id,"volta"); pos=L*Math.min((t-g.lapStart)/ref,0.97);
       const s=document.querySelector('[data-gt="'+g.id+'"]'); if(s&&!g.done) s.textContent=fmt(t-g.lapStart,true).replace(/,\d\d$/,"");
     }
     const dot=document.querySelector('[data-gd="'+g.id+'"]');
