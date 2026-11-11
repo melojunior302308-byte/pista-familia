@@ -296,6 +296,7 @@ header.top{position:relative}
       <h2>Dia a dia</h2>
       <div id="days"></div>
     </section>
+    <div style="margin-top:24px"><button class="btn ghost" id="hReset" style="width:100%;font-size:20px;padding:13px;color:var(--tartan)">Zerar histórico</button></div>
   </main>
 
   <!-- FAMÍLIA -->
@@ -850,6 +851,7 @@ function renderToday(){
 function renderHistory(){
   if(!ui.hRunner||!runnerById(ui.hRunner)) ui.hRunner=ui.runner||(S.runners[0]&&S.runners[0].id);
   $("#hSeg").querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.h===ui.hMode));
+  const hr0=runnerById(ui.hRunner); $("#hReset").classList.toggle("hidden",!hr0); if(hr0) $("#hReset").textContent="Zerar histórico de "+hr0.name;
   const rid=ui.hRunner, k=ui.hMode, isLap=!SPR(k), nounS=k==="2400"?"teste":k==="volta"?"volta":"tiro", nounP=nounS+"s";
   if(!rid){ $("#stats").innerHTML=""; $("#chart").innerHTML='<div class="empty">Adicione a família na aba Família.</div>'; $("#days").innerHTML=""; return; }
   const es=entriesOf(rid,k);
@@ -998,6 +1000,31 @@ document.addEventListener("keydown",e=>{
   if($("#scrim").classList.contains("open")||ui.tab!=="train"||/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
   if(e.code==="Space"){ e.preventDefault(); if(counting) return; if(G&&T.running) return; if(!T.running) start(); else if(isSprint()) stop(); else lapNow(); }
 });
+
+/* ---------- zerar histórico de uma pessoa ---------- */
+$("#hReset").onclick=()=>{
+  const r=runnerById(ui.hRunner); if(!r) return;
+  if(T.running||counting){ toast("Pare o cronômetro antes."); return; }
+  const n=entriesOf(r.id).length;
+  if(!n){ toast(r.name+" ainda não tem registros."); return; }
+  openSheet('<h3>Zerar histórico de '+esc(r.name)+'?</h3>'+
+    '<p style="margin:0 0 6px">Isso apaga <b>'+n+(n===1?" registro":" registros")+'</b> dessa pessoa: tiros, voltas e testes de TAF, de todos os dias. Os recordes e a meta da semana voltam do zero.</p>'+
+    '<p style="margin:0;color:var(--muted);font-size:14px">'+esc(r.name)+' continua cadastrado(a), com nome, cor e metas. Os outros da família não são afetados.</p>'+
+    '<div class="controls" style="margin-top:18px"><button class="btn ghost" id="zNo">Cancelar</button><button class="btn stop" id="zYes">Zerar</button></div>');
+  $("#zNo").onclick=closeSheet;
+  $("#zYes").onclick=()=>{
+    const removed={};
+    Object.keys(S.days).forEach(d=>{
+      const keep=[], gone=[]; S.days[d].forEach(e=>(e.r===r.id?gone:keep).push(e));
+      if(gone.length){ removed[d]=gone; if(keep.length) S.days[d]=keep; else delete S.days[d]; dirty.add(d); }
+    });
+    closeSheet(); clearGroup(); T.laps=[]; markDirty("meta"); render();
+    toast("Histórico de "+r.name+" zerado.",()=>{
+      Object.keys(removed).forEach(d=>{ S.days[d]=(S.days[d]||[]).concat(removed[d]).sort((a,b)=>a.at-b.at); dirty.add(d); });
+      markDirty("meta"); render();
+    });
+  };
+};
 
 /* ---------- backup ---------- */
 $("#bkExp").onclick=()=>{
