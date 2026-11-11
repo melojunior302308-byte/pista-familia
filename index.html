@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Pista da Família Lessa Melo</title>
-<link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#B03925">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon.svg">
+<title>Pista da Família Lessa Melo</title>
+<link rel="manifest" href="manifest.webmanifest">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
@@ -199,6 +199,17 @@ header.top{position:relative}
 .pal-menu summary{cursor:pointer; color:var(--muted); padding:4px 6px}
 .pal-menu .swatches{padding:10px 6px 4px}
 .pm-note{color:var(--muted); font-size:13px; margin:10px 6px 2px}
+.chip.grp{padding:7px 14px}
+.chip.grp[aria-pressed="true"]{border-color:var(--ink); box-shadow:inset 0 0 0 1.5px var(--ink); background:var(--surface-2)}
+.gctl{display:grid; gap:10px; margin-top:16px}
+.gbtn{display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%; border:0; border-radius:16px; padding:14px 16px; background:var(--c); color:#fff;
+  font-family:"Barlow Condensed","Arial Narrow",sans-serif; font-weight:700; font-size:26px; text-align:left; line-height:1.1; transition:transform .08s ease}
+.gbtn:active{transform:scale(.98)}
+.gbtn small{display:block; font-family:"Barlow",system-ui,sans-serif; font-weight:600; font-size:14px; opacity:.9}
+.gbtn .gt{font-variant-numeric:tabular-nums; font-size:28px; flex:none}
+.gbtn.done{background:var(--surface-2); color:var(--ink); box-shadow:inset 0 0 0 2px var(--c); cursor:default}
+.grow{display:grid; grid-template-columns:1fr auto; gap:8px}
+.gfin{border:1px solid var(--line); background:var(--surface-2); border-radius:14px; padding:0 14px; font-weight:600; font-size:14px; color:var(--muted)}
 .sync{font-size:13px; color:var(--muted); text-align:center; margin-top:22px}
 @media (prefers-reduced-motion: reduce){ .sheet{animation:none} .btn{transition:none} }
 </style>
@@ -248,6 +259,7 @@ header.top{position:relative}
           <line id="startLine" x1="90" y1="136" x2="90" y2="164" stroke="var(--lane)" stroke-width="2" stroke-dasharray="3 2"/>
           <line x1="230" y1="136" x2="230" y2="164" stroke="var(--lane)" stroke-width="3"/>
           <text x="160" y="92" text-anchor="middle" fill="#fff" opacity=".9" font-family="Barlow Condensed, Arial Narrow, sans-serif" font-weight="700" font-size="26" id="trackLabel">100 m</text>
+          <g id="gdots"></g>
           <circle id="runnerDot" cx="90" cy="150" r="8" fill="#fff" stroke="var(--ink)" stroke-width="2.5"/>
         </svg>
       </div>
@@ -303,15 +315,10 @@ header.top{position:relative}
       <div class="card" style="padding:14px; margin-top:10px">
         <label class="toggle" for="cdOn"><span><b>Largada com contagem e som</b><br><span style="color:var(--muted);font-size:14px">“Às suas marcas… Prontos… Já!” antes de começar a cronometrar</span></span><input type="checkbox" id="cdOn"></label>
       </div>
-    </section>
-    <section>
-      <h2>Backup</h2>
-      <div class="card" style="padding:14px">
-        <p style="margin:0 0 12px;color:var(--muted);font-size:14px">Baixe um arquivo com todos os treinos para guardar ou levar para outro aparelho.</p>
-        <div class="controls">
-          <button class="btn ghost" id="bkExport">Exportar</button>
-          <button class="btn ghost" id="bkImport">Importar</button>
-        </div>
+      <div class="card" style="padding:14px; margin-top:10px">
+        <b>Backup</b>
+        <div style="color:var(--muted);font-size:14px;margin:2px 0 10px">Baixe um arquivo com todos os treinos para guardar ou levar para outro aparelho.</div>
+        <div class="controls" style="margin-top:0"><button class="btn ghost" id="bkExp" style="font-size:20px;padding:12px">Exportar</button><button class="btn ghost" id="bkImp" style="font-size:20px;padding:12px">Importar</button></div>
         <input type="file" id="bkFile" accept="application/json,.json" class="hidden">
       </div>
     </section>
@@ -348,7 +355,7 @@ const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"
 /* ---------- estado ---------- */
 // S.runners: [{id,name,color}], S.lapM: metros, S.days: {"AAAA-MM-DD": [{id,r,k:"100"|"volta",ms,at}]}
 let S={runners:[],lapM:400,days:{},u:0,cd:true};
-let ui={tab:"train",runner:null,mode:"100",sprint:"100",hRunner:null,hMode:"100"};
+let ui={tab:"train",runner:null,mode:"100",sprint:"100",hRunner:null,hMode:"100",group:false,sel:[]};
 const isSprint=()=>ui.mode!=="volta";
 const metersOf=k=>k==="volta"?S.lapM:Number(k);
 const kLabel=k=>k==="volta"?"Volta":"Tiro de "+k+" m";
@@ -476,12 +483,13 @@ function cancelCountdown(){
   $("#countdown").classList.remove("open","go");
 }
 function start(){
+  if(ui.group&&!ui.sel.length){ toast("Toque no nome de quem vai correr."); return; }
   if(!ui.runner){ openRunnerSheet(); return; }
   if(counting) return;
   if(!S.cd){ begin(); return; }
   counting=true; beep(1,0.01,0.001); // libera o áudio no toque
   const r=runnerById(ui.runner), ov=$("#countdown"), txt=$("#cdText");
-  $("#cdWho").textContent=r.name+" · "+(isSprint()?ui.mode+" m":"voltas");
+  $("#cdWho").textContent=(groupActive()?ui.sel.map(id=>runnerById(id).name).join(", "):r.name)+" · "+(isSprint()?ui.mode+" m":"voltas");
   ov.classList.remove("go"); ov.classList.add("open");
   const at=(ms,fn)=>cdTimers.push(setTimeout(fn,ms));
   txt.textContent="Às suas marcas"; say("Às suas marcas"); beep(440,0.18);
@@ -492,6 +500,7 @@ function start(){
 }
 function begin(){
   T.running=true; T.t0=now(); T.lapStart=T.t0; T.laps=[];
+  if(groupActive()) beginGroup(T.t0); else clearGroup();
   tick(); renderControls(); renderTicker();
 }
 function stop(){
@@ -524,6 +533,7 @@ function resetClock(){ $("#clock").innerHTML=fmtClock(0,ui.mode==="volta"); rend
 function tick(){
   if(!T.running) return;
   const t=now(), el=t-T.t0;
+  if(G&&!G.fin){ tickGroup(t); T.raf=requestAnimationFrame(tick); return; }
   if(isSprint()){
     $("#clock").innerHTML=fmtClock(el,false);
     const ref=bestOf(ui.runner,ui.mode)||REF[ui.mode]; const s0=sprintStart(); moveDotAt(s0+(140-s0)*Math.min(el/ref,1));
@@ -543,6 +553,76 @@ function moveDotAt(pos){
   d.setAttribute("cx",pt.x.toFixed(1)); d.setAttribute("cy",pt.y.toFixed(1));
 }
 function moveDot(p){ moveDotAt(len()*p); }
+
+/* ---------- largada em grupo ---------- */
+let G=null;
+const groupActive=()=>ui.group&&ui.sel.length>1;
+const txtOn=c=>c==="#F2C200"?"#1A1A1A":"#fff";
+function beginGroup(t0){
+  G={k:ui.mode,t0,fin:false,rs:ui.sel.map(id=>({id,lapStart:t0,laps:0,best:null,ms:null,done:false,pb:false}))};
+  $("#runnerDot").style.display="none";
+  $("#gdots").innerHTML=G.rs.map(g=>'<circle data-gd="'+g.id+'" r="7" fill="'+runnerById(g.id).color+'" stroke="#fff" stroke-width="2.5"/>').join("");
+}
+function clearGroup(){ G=null; const gd=$("#gdots"); if(gd) gd.innerHTML=""; $("#runnerDot").style.display=""; }
+function groupTap(id){
+  if(!G||G.fin) return; const g=G.rs.find(x=>x.id===id); if(!g||g.done) return;
+  const t=now(), r=runnerById(id);
+  if(G.k!=="volta"){
+    const ms=Math.round(t-G.t0); if(ms<1000) return;
+    const prev=bestOf(id,G.k); addEntry(id,G.k,ms); g.ms=ms; g.done=true; g.pb=prev===null||ms<prev;
+    toast(r.name+": "+fmt(ms)+" s"+(g.pb?" · novo recorde!":""));
+  }else{
+    const ms=Math.round(t-g.lapStart); if(ms<5000){ toast("Volta muito curta, ignorada."); return; }
+    addEntry(id,"volta",ms); g.laps++; g.lapStart=t; g.best=g.best===null?ms:Math.min(g.best,ms);
+    toast(r.name+": volta "+g.laps+" em "+fmt(ms,true));
+  }
+  if(navigator.vibrate) try{navigator.vibrate(40);}catch(e){}
+  renderToday(); renderGoal();
+  if(G.rs.every(x=>x.done)) finishGroup(); else { renderControls(); renderTicker(); }
+}
+function groupDone(id){
+  const g=G&&G.rs.find(x=>x.id===id); if(!g) return; g.done=true;
+  if(G.rs.every(x=>x.done)) finishGroup(); else { renderControls(); renderTicker(); }
+}
+function finishGroup(){
+  if(!G) return;
+  T.running=false; cancelAnimationFrame(T.raf); G.fin=true; G.rs.forEach(g=>g.done=true);
+  const n=G.k==="volta"?G.rs.reduce((a,g)=>a+g.laps,0):G.rs.filter(g=>g.ms!==null).length;
+  toast("Treino em grupo salvo: "+n+(G.k==="volta"?(n===1?" volta":" voltas"):(n===1?" tempo":" tempos"))+".");
+  renderControls(); renderTicker(); renderSub();
+}
+function renderGroupControls(c){
+  c.className="gctl";
+  c.innerHTML=G.rs.map(g=>{
+    const r=runnerById(g.id), fg=txtOn(r.color);
+    if(G.k!=="volta"){
+      return g.done?'<button class="gbtn done" style="--c:'+r.color+'" disabled><span>'+esc(r.name)+'<small>chegou</small></span><span class="gt">'+(g.ms!==null?fmt(g.ms)+" s":"–")+'</span></button>'
+        :'<button class="gbtn" style="--c:'+r.color+';color:'+fg+'" data-g="'+g.id+'"><span>'+esc(r.name)+'<small>toque na chegada</small></span><span class="gt">Chegou!</span></button>';
+    }
+    if(g.done) return '<button class="gbtn done" style="--c:'+r.color+'" disabled><span>'+esc(r.name)+'<small>terminou · '+g.laps+(g.laps===1?" volta":" voltas")+'</small></span><span class="gt">✓</span></button>';
+    return '<div class="grow"><button class="gbtn" style="--c:'+r.color+';color:'+fg+'" data-g="'+g.id+'"><span>'+esc(r.name)+'<small>marcar volta '+(g.laps+1)+'</small></span><span class="gt" data-gt="'+g.id+'">0:00</span></button><button class="gfin" data-gf="'+g.id+'">Terminou</button></div>';
+  }).join("")+'<button class="btn ghost" id="gEnd">Encerrar todos</button>';
+  c.querySelectorAll("[data-g]").forEach(b=>b.onclick=()=>groupTap(b.dataset.g));
+  c.querySelectorAll("[data-gf]").forEach(b=>b.onclick=()=>groupDone(b.dataset.gf));
+  $("#gEnd").onclick=finishGroup;
+  $("#manualBtn").classList.add("hidden");
+}
+function tickGroup(t){
+  const el=t-G.t0; $("#clock").innerHTML=fmtClock(el,G.k==="volta");
+  const arrived=G.rs.filter(g=>g.done).length;
+  $("#sub").textContent=G.k==="volta"?"Tempo total · cada um marca a própria volta":arrived+" de "+G.rs.length+" chegaram";
+  const L=len();
+  G.rs.forEach(g=>{
+    let pos;
+    if(G.k!=="volta"){ const s0=sprintStart(), ref=bestOf(g.id,G.k)||REF[G.k]; pos=g.done?140:s0+(140-s0)*Math.min(el/ref,1); }
+    else{
+      const ref=bestOf(g.id,"volta")||120000; pos=L*(((t-g.lapStart)/ref)%1);
+      const s=document.querySelector('[data-gt="'+g.id+'"]'); if(s&&!g.done) s.textContent=fmt(t-g.lapStart,true).replace(/,\d\d$/,"");
+    }
+    const dot=document.querySelector('[data-gd="'+g.id+'"]');
+    if(dot){ const pt=$("#trk").getPointAtLength(((pos%L)+L)%L); dot.setAttribute("cx",pt.x.toFixed(1)); dot.setAttribute("cy",pt.y.toFixed(1)); }
+  });
+}
 
 /* ---------- dados ---------- */
 function addEntry(r,k,ms){
@@ -568,8 +648,23 @@ function chipHTML(r,pressed){
 }
 function renderRunners(){
   const box=$("#runners");
-  box.innerHTML=S.runners.map(r=>chipHTML(r,r.id===ui.runner)).join("")+'<button class="chip add" id="addChip">+ Pessoa</button>';
-  box.querySelectorAll(".chip[data-id]").forEach(b=>b.onclick=()=>{ if(T.running){toast("Pare o cronômetro antes de trocar de pessoa.");return;} ui.runner=b.dataset.id; render(); });
+  ui.sel=ui.sel.filter(id=>runnerById(id));
+  const pressed=r=>ui.group?ui.sel.includes(r.id):r.id===ui.runner;
+  box.innerHTML=(S.runners.length>1?'<button class="chip grp" id="grpChip" aria-pressed="'+ui.group+'">👥 Juntos</button>':"")+S.runners.map(r=>chipHTML(r,pressed(r))).join("")+'<button class="chip add" id="addChip">+ Pessoa</button>';
+  box.querySelectorAll(".chip[data-id]").forEach(b=>b.onclick=()=>{
+    if(T.running||counting){ toast("Pare o cronômetro antes de trocar de pessoa."); return; }
+    const id=b.dataset.id;
+    if(ui.group){ ui.sel=ui.sel.includes(id)?ui.sel.filter(x=>x!==id):ui.sel.concat(id); if(ui.sel.length) ui.runner=ui.sel[0]; clearGroup(); }
+    else ui.runner=id;
+    render();
+  });
+  const gc=$("#grpChip");
+  if(gc) gc.onclick=()=>{
+    if(T.running||counting){ toast("Pare o cronômetro antes."); return; }
+    ui.group=!ui.group; ui.sel=ui.group&&ui.runner?[ui.runner]:[]; clearGroup();
+    if(ui.group) toast("Toque no nome de cada pessoa que vai largar junto.");
+    render();
+  };
   $("#addChip").onclick=openRunnerSheet;
   const hb=$("#hRunners");
   hb.innerHTML=S.runners.map(r=>chipHTML(r,r.id===ui.hRunner)).join("");
@@ -606,8 +701,9 @@ function renderGoal(){
 }
 function renderSub(){
   const r=runnerById(ui.runner);
-  $("#who").innerHTML=r?"Correndo: <b>"+esc(r.name)+"</b>":"Adicione quem vai correr para começar";
+  $("#who").innerHTML=groupActive()?"Correndo juntos: <b>"+ui.sel.map(id=>esc(runnerById(id).name)).join(", ")+"</b>":(ui.group&&!ui.sel.length)?"Toque no nome de quem vai correr":r?"Correndo: <b>"+esc(r.name)+"</b>":"Adicione quem vai correr para começar";
   if(T.running) return;
+  if(groupActive()){ $("#sub").textContent=G&&G.fin?"Treino salvo · resultado abaixo":(isSprint()?"Uma largada só · toque no nome de cada um na chegada":"Uma largada só · cada um marca as próprias voltas"); return; }
   if(!r){ $("#sub").textContent=""; return; }
   const b=bestOf(r.id,ui.mode);
   $("#sub").innerHTML=b===null?(isSprint()?"Primeiro tiro de "+ui.mode+" m":"Primeira volta na pista"):
@@ -615,6 +711,7 @@ function renderSub(){
 }
 function renderControls(){
   const c=$("#controls");
+  if(G&&!G.fin&&T.running){ renderGroupControls(c); return; }
   if(!T.running){
     c.className="controls one";
     c.innerHTML='<button class="btn go" id="bStart">'+(isSprint()?"Largar":"Começar voltas")+"</button>";
@@ -632,6 +729,12 @@ function renderControls(){
 }
 function renderTicker(){
   const t=$("#ticker");
+  if(G){
+    t.innerHTML=G.rs.map(g=>{ const r=runnerById(g.id); if(!r) return "";
+      const v=G.k==="volta"?(g.laps+(g.laps===1?" volta":" voltas")+(g.best!==null?" · melhor "+fmt(g.best,true):"")):(g.ms!==null?fmt(g.ms)+" s":(G.fin?"–":"…"));
+      return '<span class="num'+(g.pb?" best":"")+'" style="border-color:'+r.color+'">'+esc(r.name)+" "+v+"</span>"; }).join("");
+    return;
+  }
   if(ui.mode!=="volta"||!T.laps.length){ t.innerHTML=""; return; }
   const best=Math.min(...T.laps.map(l=>l.ms));
   t.innerHTML=T.laps.map((l,i)=>'<span class="num'+(l.ms===best&&T.laps.length>1?" best":"")+'">'+(i+1)+"ª "+fmt(l.ms,true)+"</span>").join("");
@@ -788,7 +891,7 @@ function toast(msg,undo){
 }
 
 /* ---------- eventos ---------- */
-function setMode(m){ if(T.running||counting) return toast("Pare o cronômetro antes de trocar."); ui.mode=m; if(m!=="volta") ui.sprint=m; ui.hMode=m; T.laps=[]; $("#clock").innerHTML=fmtClock(0,m==="volta"); render(); }
+function setMode(m){ if(T.running||counting) return toast("Pare o cronômetro antes de trocar."); ui.mode=m; clearGroup(); if(m!=="volta") ui.sprint=m; ui.hMode=m; T.laps=[]; $("#clock").innerHTML=fmtClock(0,m==="volta"); render(); }
 $("#mSprint").onclick=()=>setMode(ui.sprint);
 $("#mlap").onclick=()=>setMode("volta");
 $("#dists").querySelectorAll("button").forEach(b=>b.onclick=()=>setMode(b.dataset.d));
@@ -808,8 +911,34 @@ document.querySelectorAll("nav.tabs button").forEach(b=>b.onclick=()=>{
 // espaço = largar/chegou; V = marcar volta
 document.addEventListener("keydown",e=>{
   if($("#scrim").classList.contains("open")||ui.tab!=="train"||/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
-  if(e.code==="Space"){ e.preventDefault(); if(counting) return; if(!T.running) start(); else if(isSprint()) stop(); else lapNow(); }
+  if(e.code==="Space"){ e.preventDefault(); if(counting) return; if(G&&T.running) return; if(!T.running) start(); else if(isSprint()) stop(); else lapNow(); }
 });
+
+/* ---------- backup ---------- */
+$("#bkExp").onclick=()=>{
+  try{
+    const blob=new Blob([JSON.stringify({app:"pista-familia",v:1,data:S})],{type:"application/json"});
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="pista-familia-"+dayKey()+".json";
+    document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },1500);
+    toast("Backup baixado.");
+  }catch(e){ toast("Não foi possível baixar o backup."); }
+};
+$("#bkImp").onclick=()=>$("#bkFile").click();
+$("#bkFile").onchange=async e=>{
+  const f=e.target.files[0]; e.target.value=""; if(!f) return;
+  try{
+    const o=JSON.parse(await f.text()); const d=o&&o.data?o.data:o;
+    if(!d||!d.days||!Array.isArray(d.runners)) throw new Error("formato");
+    let n=0;
+    d.runners.forEach(r=>{ if(r&&r.id&&r.name&&!runnerById(r.id)) S.runners.push(r); });
+    Object.keys(d.days).forEach(k=>{
+      const cur=S.days[k]||[], ids=new Set(cur.map(x=>x.id));
+      (d.days[k]||[]).forEach(x=>{ if(x&&x.id&&!ids.has(x.id)){ cur.push(x); n++; } });
+      if(cur.length){ cur.sort((a,b)=>a.at-b.at); S.days[k]=cur; dirty.add(k); }
+    });
+    markDirty("meta"); render(); toast(n+(n===1?" registro importado.":" registros importados."));
+  }catch(err){ toast("Arquivo de backup inválido."); }
+};
 
 /* ---------- aparência (só neste aparelho) ---------- */
 const THEMES=[["auto","Automático","linear-gradient(135deg,#F3F5F3 50%,#16181A 50%)","#FFFFFF","#13201A"],["light","Claro","#EDF1EE","#FFFFFF","#13201A"],["cream","Creme","#F3EDE1","#FBF7EF","#2A241C"],["gray","Cinza suave","#D3D9DF","#F1F3F5","#1D232A"],["dark","Escuro grafite","#141517","#2C2F33","#ECEDEE"]];
@@ -843,39 +972,13 @@ document.addEventListener("click",e=>{ if(!$("#palMenu").classList.contains("hid
 document.addEventListener("keydown",e=>{ if(e.key==="Escape") togglePal(false); });
 applyAP(false);
 
-/* ---------- backup ---------- */
-$("#bkExport").onclick=()=>{
-  const blob=new Blob([JSON.stringify(S)],{type:"application/json"}), a=document.createElement("a");
-  a.href=URL.createObjectURL(blob); a.download="pista-familia-"+dayKey()+".json"; a.click();
-  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
-};
-$("#bkImport").onclick=()=>$("#bkFile").click();
-$("#bkFile").onchange=e=>{
-  const f=e.target.files[0]; if(!f) return;
-  const rd=new FileReader();
-  rd.onload=()=>{
-    try{
-      const o=JSON.parse(rd.result); if(!o||!o.days||!Array.isArray(o.runners)) throw 0;
-      const ids=new Set(S.runners.map(r=>r.id));
-      o.runners.forEach(r=>{ if(!ids.has(r.id)) S.runners.push(r); });
-      Object.keys(o.days).forEach(d=>{
-        const m=new Map((S.days[d]||[]).map(x=>[x.id,x])); o.days[d].forEach(x=>m.set(x.id,x));
-        S.days[d]=[...m.values()].sort((a,b)=>a.at-b.at); dirty.add(d);
-      });
-      markDirty("meta"); render(); toast("Backup importado.");
-    }catch(err){ toast("Arquivo inválido."); }
-    e.target.value="";
-  };
-  rd.readAsText(f);
-};
-if("serviceWorker" in navigator && location.protocol.startsWith("http")) navigator.serviceWorker.register("sw.js").catch(()=>{});
-
 /* ---------- início ---------- */
 loadLocal();
 $("#clock").innerHTML=fmtClock(0,false);
 render();
 connect();
 })();
+if("serviceWorker" in navigator && location.protocol.startsWith("http")) navigator.serviceWorker.register("sw.js").catch(()=>{});
 </script>
 </body>
 </html>
