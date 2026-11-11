@@ -239,9 +239,10 @@ header.top{position:relative}
   <!-- TREINAR -->
   <main id="view-train">
     <div class="runners" id="runners"></div>
-    <div class="seg" role="group" aria-label="Tipo de treino">
+    <div class="seg" style="--n:3" role="group" aria-label="Tipo de treino">
       <button id="mSprint" aria-pressed="true">Tiros</button>
       <button id="mlap" aria-pressed="false">Voltas</button>
+      <button id="mTaf" aria-pressed="false">TAF 2400 m</button>
     </div>
     <div class="seg dists" id="dists" style="--n:3" role="group" aria-label="Distância do tiro">
       <button data-d="50">50 m</button><button data-d="100">100 m</button><button data-d="200">200 m</button>
@@ -283,8 +284,8 @@ header.top{position:relative}
   <!-- HISTÓRICO -->
   <main id="view-history" class="hidden">
     <div class="runners" id="hRunners"></div>
-    <div class="seg" style="--n:4" role="group" aria-label="Tipo de treino" id="hSeg">
-      <button data-h="50">50 m</button><button data-h="100">100 m</button><button data-h="200">200 m</button><button data-h="volta">Voltas</button>
+    <div class="seg" style="--n:5" role="group" aria-label="Tipo de treino" id="hSeg">
+      <button data-h="50">50 m</button><button data-h="100">100 m</button><button data-h="200">200 m</button><button data-h="volta">Voltas</button><button data-h="2400">TAF</button>
     </div>
     <section>
       <h2>Recordes</h2>
@@ -356,9 +357,13 @@ const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"
 // S.runners: [{id,name,color}], S.lapM: metros, S.days: {"AAAA-MM-DD": [{id,r,k:"100"|"volta",ms,at}]}
 let S={runners:[],lapM:400,days:{},u:0,cd:true};
 let ui={tab:"train",runner:null,mode:"100",sprint:"100",hRunner:null,hMode:"100",group:false,sel:[]};
-const isSprint=()=>ui.mode!=="volta";
+const SPR=k=>k==="50"||k==="100"||k==="200";
+const isSprint=()=>SPR(ui.mode);
+const isTaf=()=>ui.mode==="2400";
+const TAF_M=2400;
+const tafLaps=()=>Math.max(1,Math.round(TAF_M/S.lapM));
 const metersOf=k=>k==="volta"?S.lapM:Number(k);
-const kLabel=k=>k==="volta"?"Volta":"Tiro de "+k+" m";
+const kLabel=k=>k==="volta"?"Volta":k==="2400"?"TAF 2400 m":"Tiro de "+k+" m";
 const REF={"50":9000,"100":16000,"200":34000};
 
 function loadLocal(){
@@ -489,7 +494,7 @@ function start(){
   if(!S.cd){ begin(); return; }
   counting=true; beep(1,0.01,0.001); // libera o áudio no toque
   const r=runnerById(ui.runner), ov=$("#countdown"), txt=$("#cdText");
-  $("#cdWho").textContent=(groupActive()?ui.sel.map(id=>runnerById(id).name).join(", "):r.name)+" · "+(isSprint()?ui.mode+" m":"voltas");
+  $("#cdWho").textContent=(groupActive()?ui.sel.map(id=>runnerById(id).name).join(", "):r.name)+" · "+(isSprint()?ui.mode+" m":isTaf()?"TAF 2400 m":"voltas");
   ov.classList.remove("go"); ov.classList.add("open");
   const at=(ms,fn)=>cdTimers.push(setTimeout(fn,ms));
   txt.textContent="Às suas marcas"; say("Às suas marcas"); beep(440,0.18);
@@ -514,6 +519,8 @@ function stop(){
     const pb=prevBest===null||ms<prevBest;
     $("#sub").innerHTML=pb?'<span class="pb">Novo recorde de '+esc(r.name)+"!</span>":"Recorde: "+fmt(prevBest)+" s";
     toast(ui.mode+" m de "+r.name+" salvo: "+fmt(ms)+" s",()=>removeEntry(e));
+  }else if(isTaf()){
+    T.laps=[]; $("#clock").innerHTML=fmtClock(0,true); toast("Teste interrompido · não foi salvo.");
   }else{
     const ms=Math.round(t-T.lapStart);
     if(ms>=5000){ lapNow(t); }
@@ -524,11 +531,17 @@ function stop(){
 function lapNow(t){
   t=t||now(); const ms=Math.round(t-T.lapStart);
   if(ms<5000){ toast("Volta muito curta, ignorada."); return; }
+  if(isTaf()){
+    T.laps.push({ms}); T.lapStart=t;
+    if(navigator.vibrate) try{navigator.vibrate(40);}catch(err){}
+    if(T.laps.length>=tafLaps()) finishTaf(t); else { renderTicker(); beep(660,0.12); }
+    return;
+  }
   const e=addEntry(ui.runner,"volta",ms); T.laps.push(e); T.lapStart=t;
   renderTicker(); renderToday(); renderGoal();
   if(navigator.vibrate) try{navigator.vibrate(40);}catch(err){}
 }
-function resetClock(){ $("#clock").innerHTML=fmtClock(0,ui.mode==="volta"); renderMode(); renderSub(); }
+function resetClock(){ $("#clock").innerHTML=fmtClock(0,!isSprint()); renderMode(); renderSub(); }
 
 function tick(){
   if(!T.running) return;
@@ -537,6 +550,10 @@ function tick(){
   if(isSprint()){
     $("#clock").innerHTML=fmtClock(el,false);
     const ref=refMs(ui.runner,ui.mode); const s0=sprintStart(); moveDotAt(s0+(140-s0)*Math.min(el/ref,1));
+  }else if(isTaf()){
+    $("#clock").innerHTML=fmtClock(el,true);
+    moveDot(Math.min((t-T.lapStart)/tafLapRef(ui.runner),0.97));
+    $("#sub").innerHTML=tafLive(ui.runner,T.laps.length,T.laps.reduce((a,l)=>a+l.ms,0),t-T.lapStart);
   }else{
     $("#clock").innerHTML=fmtClock(t-T.lapStart,true);
     const ref=refMs(ui.runner,"volta"); moveDot(Math.min((t-T.lapStart)/ref,0.97));
@@ -565,12 +582,56 @@ function refMs(rid,k){
   return Math.min(hi,Math.max(lo,v));
 }
 
+/* ---------- TAF 2400 m ---------- */
+const short=ms=>fmt(ms,true).replace(/,\d\d$/,"");
+function fmtMS(ms){ const s=Math.round(ms/1000); return Math.floor(s/60)+":"+pad(s%60); }
+function parseMS(v){
+  v=String(v||"").trim().replace(",",".").replace(/[^\d:.]/g,""); if(!v) return 0;
+  let m,sec; if(v.includes(":")){ const p=v.split(":"); m=parseFloat(p[0])||0; sec=parseFloat(p[1])||0; } else { m=parseFloat(v)||0; sec=0; }
+  const ms=Math.round((m*60+sec)*1000); return ms>=60000&&ms<=3600000?ms:0;
+}
+function tafLapRef(rid){
+  const r=runnerById(rid); if(r&&r.tafAlvo) return r.tafAlvo/tafLaps();
+  const es=entriesOf(rid,"2400").slice(-5).map(e=>e.ms).sort((a,b)=>a-b);
+  if(es.length) return es[Math.floor(es.length/2)]/tafLaps();
+  return refMs(rid,"volta");
+}
+function tafLive(rid,done,sum,cur){
+  const n=tafLaps(), r=runnerById(rid);
+  let s="Volta "+Math.min(done+1,n)+" de "+n+" · nesta volta "+short(cur);
+  if(done){
+    const proj=sum/done*n; s+=" · projeção "+short(proj);
+    if(r&&r.tafAlvo) s+=proj<=r.tafAlvo?" <b style='color:var(--infield)'>✓ no alvo</b>":" <b style='color:var(--tartan)'>acima do alvo</b>";
+  }
+  return s;
+}
+function tafIdle(r){
+  const n=tafLaps(), b=bestOf(r.id,"2400");
+  let s=n+" voltas de "+S.lapM+" m";
+  if(b!==null) s+=" · recorde <span class='pb'>"+short(b)+"</span>";
+  if(r.tafAlvo) s+=" · alvo "+fmtMS(r.tafAlvo);
+  return s;
+}
+function finishTaf(t){
+  T.running=false; cancelAnimationFrame(T.raf);
+  const total=Math.round(t-T.t0), r=runnerById(ui.runner), prev=bestOf(ui.runner,"2400");
+  const e=addEntry(ui.runner,"2400",total,T.laps.map(l=>l.ms));
+  $("#clock").innerHTML=fmtClock(total,true);
+  const pb=prev===null||total<prev;
+  let msg=pb?'<span class="pb">Novo recorde de '+esc(r.name)+' no TAF!</span>':"Recorde: "+short(prev);
+  if(r.tafAlvo) msg+=" · "+(total<=r.tafAlvo?"<b style='color:var(--infield)'>dentro do alvo ✓</b>":"<b style='color:var(--tartan)'>"+short(total-r.tafAlvo)+" acima do alvo</b>");
+  $("#sub").innerHTML=msg;
+  beep(880,0.2); setTimeout(()=>beep(1175,0.35),220);
+  toast("TAF 2400 m de "+r.name+": "+short(total),()=>removeEntry(e));
+  renderControls(); renderTicker(); renderToday(); renderGoal(); renderMode();
+}
+
 /* ---------- largada em grupo ---------- */
 let G=null;
 const groupActive=()=>ui.group&&ui.sel.length>1;
 const txtOn=c=>c==="#F2C200"?"#1A1A1A":"#fff";
 function beginGroup(t0){
-  G={k:ui.mode,t0,fin:false,rs:ui.sel.map(id=>({id,lapStart:t0,laps:0,best:null,ms:null,done:false,pb:false}))};
+  G={k:ui.mode,t0,fin:false,rs:ui.sel.map(id=>({id,lapStart:t0,laps:0,best:null,ms:null,done:false,pb:false,sp:[]}))};
   $("#runnerDot").style.display="none";
   $("#gdots").innerHTML=G.rs.map(g=>'<circle data-gd="'+g.id+'" r="7" fill="'+runnerById(g.id).color+'" stroke="#fff" stroke-width="2.5"/>').join("");
 }
@@ -578,10 +639,19 @@ function clearGroup(){ G=null; const gd=$("#gdots"); if(gd) gd.innerHTML=""; $("
 function groupTap(id){
   if(!G||G.fin) return; const g=G.rs.find(x=>x.id===id); if(!g||g.done) return;
   const t=now(), r=runnerById(id);
-  if(G.k!=="volta"){
+  if(SPR(G.k)){
     const ms=Math.round(t-G.t0); if(ms<1000) return;
     const prev=bestOf(id,G.k); addEntry(id,G.k,ms); g.ms=ms; g.done=true; g.pb=prev===null||ms<prev;
     toast(r.name+": "+fmt(ms)+" s"+(g.pb?" · novo recorde!":""));
+  }else if(G.k==="2400"){
+    const ms=Math.round(t-g.lapStart); if(ms<5000){ toast("Volta muito curta, ignorada."); return; }
+    g.sp.push(ms); g.laps++; g.lapStart=t;
+    if(g.laps>=tafLaps()){
+      const total=Math.round(t-G.t0), prev=bestOf(id,"2400");
+      addEntry(id,"2400",total,g.sp.slice()); g.ms=total; g.done=true; g.pb=prev===null||total<prev;
+      toast(r.name+" terminou o TAF: "+short(total)+(r.tafAlvo?(total<=r.tafAlvo?" · dentro do alvo ✓":" · acima do alvo"):""));
+      beep(880,0.2); setTimeout(()=>beep(1175,0.35),220);
+    }else toast(r.name+": volta "+g.laps+" de "+tafLaps()+" em "+short(ms));
   }else{
     const ms=Math.round(t-g.lapStart); if(ms<5000){ toast("Volta muito curta, ignorada."); return; }
     addEntry(id,"volta",ms); g.laps++; g.lapStart=t; g.best=g.best===null?ms:Math.min(g.best,ms);
@@ -606,12 +676,12 @@ function renderGroupControls(c){
   c.className="gctl";
   c.innerHTML=G.rs.map(g=>{
     const r=runnerById(g.id), fg=txtOn(r.color);
-    if(G.k!=="volta"){
+    if(SPR(G.k)){
       return g.done?'<button class="gbtn done" style="--c:'+r.color+'" disabled><span>'+esc(r.name)+'<small>chegou</small></span><span class="gt">'+(g.ms!==null?fmt(g.ms)+" s":"–")+'</span></button>'
         :'<button class="gbtn" style="--c:'+r.color+';color:'+fg+'" data-g="'+g.id+'"><span>'+esc(r.name)+'<small>toque na chegada</small></span><span class="gt">Chegou!</span></button>';
     }
-    if(g.done) return '<button class="gbtn done" style="--c:'+r.color+'" disabled><span>'+esc(r.name)+'<small>terminou · '+g.laps+(g.laps===1?" volta":" voltas")+'</small></span><span class="gt">✓</span></button>';
-    return '<div class="grow"><button class="gbtn" style="--c:'+r.color+';color:'+fg+'" data-g="'+g.id+'"><span>'+esc(r.name)+'<small>marcar volta '+(g.laps+1)+'</small></span><span class="gt" data-gt="'+g.id+'">0:00</span></button><button class="gfin" data-gf="'+g.id+'">Terminou</button></div>';
+    if(g.done) return '<button class="gbtn done" style="--c:'+r.color+'" disabled><span>'+esc(r.name)+'<small>'+(G.k==="2400"?(g.ms!==null?"concluiu o TAF":"não concluiu · "+g.laps+"/"+tafLaps()):"terminou · "+g.laps+(g.laps===1?" volta":" voltas"))+'</small></span><span class="gt">'+(G.k==="2400"&&g.ms!==null?short(g.ms):"✓")+'</span></button>';
+    return '<div class="grow"><button class="gbtn" style="--c:'+r.color+';color:'+fg+'" data-g="'+g.id+'"><span>'+esc(r.name)+'<small>marcar volta '+(g.laps+1)+(G.k==="2400"?" de "+tafLaps():"")+'</small></span><span class="gt" data-gt="'+g.id+'">0:00</span></button><button class="gfin" data-gf="'+g.id+'">'+(G.k==="2400"?"Abandonou":"Terminou")+'</button></div>';
   }).join("")+'<button class="btn ghost" id="gEnd">Encerrar todos</button>';
   c.querySelectorAll("[data-g]").forEach(b=>b.onclick=()=>groupTap(b.dataset.g));
   c.querySelectorAll("[data-gf]").forEach(b=>b.onclick=()=>groupDone(b.dataset.gf));
@@ -619,15 +689,15 @@ function renderGroupControls(c){
   $("#manualBtn").classList.add("hidden");
 }
 function tickGroup(t){
-  const el=t-G.t0; $("#clock").innerHTML=fmtClock(el,G.k==="volta");
+  const el=t-G.t0; $("#clock").innerHTML=fmtClock(el,!SPR(G.k));
   const arrived=G.rs.filter(g=>g.done).length;
-  $("#sub").textContent=G.k==="volta"?"Tempo total · cada um marca a própria volta":arrived+" de "+G.rs.length+" chegaram";
+  $("#sub").textContent=!SPR(G.k)?(G.k==="2400"?"TAF 2400 m · "+G.rs.filter(g=>g.ms!==null).length+" de "+G.rs.length+" concluíram":"Tempo total · cada um marca a própria volta"):arrived+" de "+G.rs.length+" chegaram";
   const L=len();
   G.rs.forEach(g=>{
     let pos;
-    if(G.k!=="volta"){ const s0=sprintStart(), ref=refMs(g.id,G.k); pos=g.done?140:s0+(140-s0)*Math.min(el/ref,1); }
+    if(SPR(G.k)){ const s0=sprintStart(), ref=refMs(g.id,G.k); pos=g.done?140:s0+(140-s0)*Math.min(el/ref,1); }
     else{
-      const ref=refMs(g.id,"volta"); pos=L*Math.min((t-g.lapStart)/ref,0.97);
+      const ref=G.k==="2400"?tafLapRef(g.id):refMs(g.id,"volta"); pos=L*Math.min((t-g.lapStart)/ref,0.97);
       const s=document.querySelector('[data-gt="'+g.id+'"]'); if(s&&!g.done) s.textContent=fmt(t-g.lapStart,true).replace(/,\d\d$/,"");
     }
     const dot=document.querySelector('[data-gd="'+g.id+'"]');
@@ -636,8 +706,8 @@ function tickGroup(t){
 }
 
 /* ---------- dados ---------- */
-function addEntry(r,k,ms){
-  const d=dayKey(); const e={id:uid(),r,k,ms,at:Date.now()};
+function addEntry(r,k,ms,sp){
+  const d=dayKey(); const e={id:uid(),r,k,ms,at:Date.now()}; if(sp) e.sp=sp;
   const rr=runnerById(r), before=weekStats(r).m;
   (S.days[d]=S.days[d]||[]).push(e); markDirty(d);
   if(rr&&rr.goalKm&&before<rr.goalKm*1000&&before+metersOf(k)>=rr.goalKm*1000){
@@ -682,7 +752,7 @@ function renderRunners(){
   hb.querySelectorAll(".chip").forEach(b=>b.onclick=()=>{ ui.hRunner=b.dataset.id; renderHistory(); renderRunners(); });
 }
 function renderMode(){
-  $("#mSprint").setAttribute("aria-pressed",isSprint()); $("#mlap").setAttribute("aria-pressed",!isSprint());
+  $("#mSprint").setAttribute("aria-pressed",isSprint()); $("#mlap").setAttribute("aria-pressed",ui.mode==="volta"); $("#mTaf").setAttribute("aria-pressed",isTaf());
   $("#dists").classList.toggle("hidden",!isSprint());
   $("#dists").querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.d===ui.sprint));
   const hl=$("#straight"), sl=$("#startLine");
@@ -695,7 +765,7 @@ function renderMode(){
     sl.style.display="";
     if(!T.running) moveDotAt(sprintStart());
   }else{ hl.style.display="none"; sl.style.display="none"; if(!T.running) moveDot(0); }
-  $("#trackLabel").textContent=isSprint()?ui.mode+" m":S.lapM+" m";
+  $("#trackLabel").textContent=isSprint()?ui.mode+" m":isTaf()?"TAF 2400 m":S.lapM+" m";
 }
 function renderGoal(){
   const box=$("#goal"), r=runnerById(ui.runner);
@@ -714,8 +784,9 @@ function renderSub(){
   const r=runnerById(ui.runner);
   $("#who").innerHTML=groupActive()?"Correndo juntos: <b>"+ui.sel.map(id=>esc(runnerById(id).name)).join(", ")+"</b>":(ui.group&&!ui.sel.length)?"Toque no nome de quem vai correr":r?"Correndo: <b>"+esc(r.name)+"</b>":"Adicione quem vai correr para começar";
   if(T.running) return;
-  if(groupActive()){ $("#sub").textContent=G&&G.fin?"Treino salvo · resultado abaixo":(isSprint()?"Uma largada só · toque no nome de cada um na chegada":"Uma largada só · cada um marca as próprias voltas"); return; }
+  if(groupActive()){ $("#sub").textContent=G&&G.fin?"Treino salvo · resultado abaixo":(isSprint()?"Uma largada só · toque no nome de cada um na chegada":isTaf()?"TAF 2400 m · uma largada só · cada um marca suas "+tafLaps()+" voltas":"Uma largada só · cada um marca as próprias voltas"); return; }
   if(!r){ $("#sub").textContent=""; return; }
+  if(isTaf()){ $("#sub").innerHTML=tafIdle(r); return; }
   const b=bestOf(r.id,ui.mode);
   $("#sub").innerHTML=b===null?(isSprint()?"Primeiro tiro de "+ui.mode+" m":"Primeira volta na pista"):
     "Recorde: <span class='pb'>"+fmt(b,!isSprint())+(isSprint()?" s":"")+"</span>";
@@ -725,7 +796,7 @@ function renderControls(){
   if(G&&!G.fin&&T.running){ renderGroupControls(c); return; }
   if(!T.running){
     c.className="controls one";
-    c.innerHTML='<button class="btn go" id="bStart">'+(isSprint()?"Largar":"Começar voltas")+"</button>";
+    c.innerHTML='<button class="btn go" id="bStart">'+(isSprint()||isTaf()?"Largar":"Começar voltas")+"</button>";
     $("#bStart").onclick=start;
   }else if(isSprint()){
     c.className="controls one";
@@ -733,7 +804,7 @@ function renderControls(){
     $("#bStop").onclick=stop;
   }else{
     c.className="controls";
-    c.innerHTML='<button class="btn lap" id="bLap">Marcar volta</button><button class="btn stop" id="bStop">Encerrar</button>';
+    c.innerHTML='<button class="btn lap" id="bLap">Marcar volta</button><button class="btn stop" id="bStop">'+(isTaf()?"Abandonar":"Encerrar")+'</button>';
     $("#bLap").onclick=()=>lapNow(); $("#bStop").onclick=stop;
   }
   $("#manualBtn").classList.toggle("hidden",T.running);
@@ -742,11 +813,11 @@ function renderTicker(){
   const t=$("#ticker");
   if(G){
     t.innerHTML=G.rs.map(g=>{ const r=runnerById(g.id); if(!r) return "";
-      const v=G.k==="volta"?(g.laps+(g.laps===1?" volta":" voltas")+(g.best!==null?" · melhor "+fmt(g.best,true):"")):(g.ms!==null?fmt(g.ms)+" s":(G.fin?"–":"…"));
+      const v=G.k==="2400"?(g.ms!==null?short(g.ms):g.laps+"/"+tafLaps()+" voltas"+(G.fin?" · não concluiu":"")):G.k==="volta"?(g.laps+(g.laps===1?" volta":" voltas")+(g.best!==null?" · melhor "+fmt(g.best,true):"")):(g.ms!==null?fmt(g.ms)+" s":(G.fin?"–":"…"));
       return '<span class="num'+(g.pb?" best":"")+'" style="border-color:'+r.color+'">'+esc(r.name)+" "+v+"</span>"; }).join("");
     return;
   }
-  if(ui.mode!=="volta"||!T.laps.length){ t.innerHTML=""; return; }
+  if(isSprint()||!T.laps.length){ t.innerHTML=""; return; }
   const best=Math.min(...T.laps.map(l=>l.ms));
   t.innerHTML=T.laps.map((l,i)=>'<span class="num'+(l.ms===best&&T.laps.length>1?" best":"")+'">'+(i+1)+"ª "+fmt(l.ms,true)+"</span>").join("");
 }
@@ -756,7 +827,7 @@ function renderToday(){
   const by={}; list.forEach(e=>{(by[e.r]=by[e.r]||[]).push(e);});
   let html="";
   S.runners.filter(r=>by[r.id]).forEach(r=>{
-    const es=by[r.id]; const bestK={}; ["50","100","200","volta"].forEach(k=>bestK[k]=bestOf(r.id,k));
+    const es=by[r.id]; const bestK={}; ["50","100","200","volta","2400"].forEach(k=>bestK[k]=bestOf(r.id,k));
     const dist=es.reduce((a,e)=>a+metersOf(e.k),0);
     html+='<div class="card person" style="--c:'+r.color+'"><div class="person-head"><span class="dot" style="--c:'+r.color+'"></span><strong>'+esc(r.name)+'</strong><span class="m num">'+(dist>=1000?(dist/1000).toLocaleString("pt-BR",{maximumFractionDigits:2})+" km":dist+" m")+"</span></div>";
     es.slice().sort((a,b)=>b.at-a.at).forEach(e=>{
@@ -764,7 +835,7 @@ function renderToday(){
       const label=kLabel(e.k);
       const idx=es.filter(x=>x.k===e.k).indexOf(e)+1;
       const hr=new Date(e.at).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
-      html+='<div class="row"><div class="main"><div class="t num">'+fmt(e.ms,e.k==="volta")+(e.k!=="volta"?" s":"")+(isPB?'<span class="tag pb">Recorde</span>':"")+'</div><div class="m">'+label+" "+idx+" · "+hr+(e.k==="volta"?" · "+pace(e.ms,S.lapM):"")+'</div></div><button class="x" aria-label="Apagar" data-del="'+e.id+'">×</button></div>';
+      html+='<div class="row"><div class="main"><div class="t num">'+fmt(e.ms,!SPR(e.k))+(SPR(e.k)?" s":"")+(isPB?'<span class="tag pb">Recorde</span>':"")+'</div><div class="m">'+label+" "+idx+" · "+hr+(!SPR(e.k)?" · "+pace(e.ms,metersOf(e.k)):"")+(e.sp?"<br>Voltas: "+e.sp.map(short).join(" · "):"")+'</div></div><button class="x" aria-label="Apagar" data-del="'+e.id+'">×</button></div>';
     });
     html+="</div>";
   });
@@ -779,7 +850,7 @@ function renderToday(){
 function renderHistory(){
   if(!ui.hRunner||!runnerById(ui.hRunner)) ui.hRunner=ui.runner||(S.runners[0]&&S.runners[0].id);
   $("#hSeg").querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.h===ui.hMode));
-  const rid=ui.hRunner, k=ui.hMode, isLap=k==="volta";
+  const rid=ui.hRunner, k=ui.hMode, isLap=!SPR(k), nounS=k==="2400"?"teste":k==="volta"?"volta":"tiro", nounP=nounS+"s";
   if(!rid){ $("#stats").innerHTML=""; $("#chart").innerHTML='<div class="empty">Adicione a família na aba Família.</div>'; $("#days").innerHTML=""; return; }
   const es=entriesOf(rid,k);
   const byDay={}; es.forEach(e=>{(byDay[e.d]=byDay[e.d]||[]).push(e);});
@@ -788,9 +859,9 @@ function renderHistory(){
   const avg=es.length?es.reduce((a,e)=>a+e.ms,0)/es.length:null;
   const dist=es.length*metersOf(k);
   $("#stats").innerHTML=[
-    [best!==null?fmt(best,isLap)+(isLap?"":" s"):"–","Melhor "+(isLap?"volta":"tiro")],
+    [best!==null?fmt(best,isLap)+(isLap?"":" s"):"–","Melhor "+nounS],
     [avg!==null?fmt(avg,isLap)+(isLap?"":" s"):"–","Média geral"],
-    [es.length,isLap?"Voltas no total":"Tiros no total"],
+    [es.length,nounP[0].toUpperCase()+nounP.slice(1)+" no total"],
     [dist>=1000?(dist/1000).toLocaleString("pt-BR",{maximumFractionDigits:1})+" km":dist+" m",dayKeys.length+(dayKeys.length===1?" dia":" dias")+" de treino"]
   ].map(s=>'<div class="stat"><div class="v">'+s[0]+'</div><div class="l">'+s[1]+"</div></div>").join("");
 
@@ -813,10 +884,10 @@ function renderHistory(){
   }
 
   const dbox=$("#days");
-  if(!dayKeys.length){ dbox.innerHTML='<div class="card"><div class="empty">Ainda sem '+(isLap?"voltas":"tiros de "+k+" m")+" registrados.</div></div>"; return; }
+  if(!dayKeys.length){ dbox.innerHTML='<div class="card"><div class="empty">Ainda sem '+(k==="volta"?"voltas":k==="2400"?"testes de 2400 m":"tiros de "+k+" m")+" registrados.</div></div>"; return; }
   dbox.innerHTML='<div class="card">'+dayKeys.slice().reverse().map(d=>{
     const l=byDay[d], b=Math.min(...l.map(e=>e.ms)), a=l.reduce((s,e)=>s+e.ms,0)/l.length;
-    return '<div class="row"><div class="main"><div class="t num">'+fmt(b,isLap)+(isLap?"":" s")+(b===best?'<span class="tag pb">Recorde</span>':"")+'</div><div class="m">'+dateLabel(d)+" · "+l.length+(isLap?(l.length>1?" voltas":" volta"):(l.length>1?" tiros":" tiro"))+" · média "+fmt(a,isLap)+"</div></div></div>";
+    return '<div class="row"><div class="main"><div class="t num">'+fmt(b,isLap)+(isLap?"":" s")+(b===best?'<span class="tag pb">Recorde</span>':"")+'</div><div class="m">'+dateLabel(d)+" · "+l.length+" "+(l.length>1?nounP:nounS)+" · média "+fmt(a,isLap)+"</div></div></div>";
   }).join("")+"</div>";
 }
 
@@ -835,7 +906,7 @@ function render(){
   $("#today").textContent=new Date().toLocaleDateString("pt-BR",{weekday:"short",day:"numeric",month:"short"}).replace(/\./g,"");
   if(!ui.runner&&S.runners[0]) ui.runner=S.runners[0].id;
   renderRunners(); renderMode(); renderSub(); renderControls(); renderTicker();
-  if(!T.running) $("#clock").innerHTML=$("#clock").innerHTML||fmtClock(0,ui.mode==="volta");
+  if(!T.running) $("#clock").innerHTML=$("#clock").innerHTML||fmtClock(0,!isSprint());
   renderToday(); renderGoal(); renderHistory(); renderFamily();
 }
 
@@ -853,13 +924,15 @@ function openRunnerSheet(editId){
     '<div class="field"><label for="rName">Nome</label><input class="input" id="rName" maxlength="24" placeholder="Ex.: Ana, Pai, Lucas" value="'+(r?esc(r.name):"")+'"></div>'+
     '<div class="field"><label>Cor</label><div class="swatches" id="sws">'+COLORS.map(c=>'<button class="sw" style="--c:'+c+'" data-c="'+c+'" aria-label="Cor" aria-pressed="'+(c===color)+'"></button>').join("")+"</div></div>"+
     '<div class="field"><label for="rGoal">Meta semanal em km (deixe vazio para não ter meta)</label><input class="input num" id="rGoal" type="number" min="0" max="200" step="0.5" inputmode="decimal" placeholder="Ex.: 3" value="'+(r&&r.goalKm?r.goalKm:"")+'"></div>'+
+    '<div class="field"><label for="rTaf">Tempo-alvo no TAF 2400 m em min:seg (opcional)</label><input class="input num" id="rTaf" placeholder="Ex.: 12:00" inputmode="text" value="'+(r&&r.tafAlvo?fmtMS(r.tafAlvo):"")+'"></div>'+
     '<div class="controls'+(r?"":" one")+'" style="margin-top:18px">'+(r?'<button class="btn ghost" id="rDel">Remover</button>':"")+'<button class="btn go" id="rSave">Salvar</button></div>');
   $("#sws").querySelectorAll(".sw").forEach(b=>b.onclick=()=>{ color=b.dataset.c; $("#sws").querySelectorAll(".sw").forEach(x=>x.setAttribute("aria-pressed",x===b)); });
   const save=()=>{
     const name=$("#rName").value.trim(); if(!name){ $("#rName").focus(); return; }
     const g=parseFloat(String($("#rGoal").value).replace(",","."))||0; const goalKm=g>0?Math.round(g*10)/10:0;
-    if(r){ r.name=name; r.color=color; if(goalKm) r.goalKm=goalKm; else delete r.goalKm; }
-    else{ const n={id:uid(),name,color}; if(goalKm) n.goalKm=goalKm; S.runners.push(n); ui.runner=n.id; if(!ui.hRunner) ui.hRunner=n.id; }
+    const tafAlvo=parseMS($("#rTaf").value);
+    if(r){ r.name=name; r.color=color; if(goalKm) r.goalKm=goalKm; else delete r.goalKm; if(tafAlvo) r.tafAlvo=tafAlvo; else delete r.tafAlvo; }
+    else{ const n={id:uid(),name,color}; if(goalKm) n.goalKm=goalKm; if(tafAlvo) n.tafAlvo=tafAlvo; S.runners.push(n); ui.runner=n.id; if(!ui.hRunner) ui.hRunner=n.id; }
     markDirty("meta"); closeSheet(); render();
   };
   $("#rSave").onclick=save; $("#rName").onkeydown=e=>{ if(e.key==="Enter") save(); };
@@ -878,7 +951,7 @@ function openManualSheet(){
   if(!S.runners.length){ openRunnerSheet(); return; }
   openSheet('<h3>Lançar tempo à mão</h3>'+
     '<div class="field"><label for="mr">Quem correu</label><select class="input" id="mr">'+S.runners.map(r=>'<option value="'+r.id+'"'+(r.id===ui.runner?" selected":"")+">"+esc(r.name)+"</option>").join("")+"</select></div>"+
-    '<div class="field"><label for="mk">Tipo</label><select class="input" id="mk">'+["50","100","200"].map(d=>'<option value="'+d+'"'+(ui.mode===d?" selected":"")+">Tiro de "+d+" m</option>").join("")+'<option value="volta"'+(ui.mode==="volta"?" selected":"")+">Volta ("+S.lapM+" m)</option></select></div>"+
+    '<div class="field"><label for="mk">Tipo</label><select class="input" id="mk">'+["50","100","200"].map(d=>'<option value="'+d+'"'+(ui.mode===d?" selected":"")+">Tiro de "+d+" m</option>").join("")+'<option value="volta"'+(ui.mode==="volta"?" selected":"")+">Volta ("+S.lapM+" m)</option><option value='2400'"+(ui.mode==="2400"?" selected":"")+">TAF 2400 m</option></select></div>"+
     '<div class="field"><label>Tempo</label><div class="inline"><input class="input num" id="mm" type="number" min="0" inputmode="numeric" placeholder="min"><input class="input num" id="ms" type="number" min="0" max="59" step="0.01" inputmode="decimal" placeholder="seg (ex.: 15,42)"></div></div>'+
     '<div class="field"><label for="md">Data</label><input class="input" id="md" type="date" value="'+dayKey()+'" max="'+dayKey()+'"></div>'+
     '<div class="controls one" style="margin-top:18px"><button class="btn go" id="mSave">Salvar tempo</button></div>');
@@ -902,9 +975,10 @@ function toast(msg,undo){
 }
 
 /* ---------- eventos ---------- */
-function setMode(m){ if(T.running||counting) return toast("Pare o cronômetro antes de trocar."); ui.mode=m; clearGroup(); if(m!=="volta") ui.sprint=m; ui.hMode=m; T.laps=[]; $("#clock").innerHTML=fmtClock(0,m==="volta"); render(); }
+function setMode(m){ if(T.running||counting) return toast("Pare o cronômetro antes de trocar."); ui.mode=m; clearGroup(); if(SPR(m)) ui.sprint=m; ui.hMode=m; T.laps=[]; $("#clock").innerHTML=fmtClock(0,!SPR(m)); render(); }
 $("#mSprint").onclick=()=>setMode(ui.sprint);
 $("#mlap").onclick=()=>setMode("volta");
+$("#mTaf").onclick=()=>setMode("2400");
 $("#dists").querySelectorAll("button").forEach(b=>b.onclick=()=>setMode(b.dataset.d));
 $("#hSeg").querySelectorAll("button").forEach(b=>b.onclick=()=>{ ui.hMode=b.dataset.h; renderHistory(); });
 $("#cdOn").onchange=e=>{ S.cd=e.target.checked; markDirty("meta"); };
